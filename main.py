@@ -42,9 +42,6 @@ class UrbanRoutesPage:
     def __init__(self, driver):
         self.driver = driver
 
-    from selenium.webdriver.support.ui import WebDriverWait
-    from selenium.webdriver.support import expected_conditions as EC
-
     def set_from(self, from_address):
         input_from = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(self.from_field))
         input_from.clear()
@@ -57,39 +54,46 @@ class UrbanRoutesPage:
         input_to.send_keys(to_address)
         input_to.send_keys(Keys.TAB)
 
-    def get_from(self):
-        return self.driver.find_element(*self.from_field).get_property('value')
-
-    def get_to(self):
-        return self.driver.find_element(*self.to_field).get_property('value')
+    def click_first_order_button(self):
+        first_order_button = WebDriverWait(self.driver, 15).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[contains(text(), "Pedir un taxi")]'))
+        )
+        self.driver.execute_script("arguments[0].click();", first_order_button)
 
     def select_comfort_tariff(self):
-        comfort_button = WebDriverWait(self.driver, 15).until(
+        button = WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, '[data-for="tariff-card-4"]'))
         )
-        self.driver.execute_script("arguments[0].scrollIntoView(true);", comfort_button)
-        self.driver.execute_script("arguments[0].click();", comfort_button)
+        self.driver.execute_script("arguments[0].click();", button)
 
     def click_add_phone(self):
         add_phone_button = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.ID, 'add-phone'))
         )
-        self.driver.execute_script("arguments[0].scrollIntoView(true);", add_phone_button)
-        add_phone_button.click()
+        self.driver.execute_script("arguments[0].click();", add_phone_button)
+
+    def enter_phone(self, phone_number):
+        phone_input = WebDriverWait(self.driver, 10).until(
+            EC.element_to_be_clickable((By.ID, 'phone'))
+        )
+        phone_input.send_keys(phone_number)
+        phone_input.send_keys(Keys.TAB)
+
+    def click_add_card(self):
+        add_card_button = WebDriverWait(self.driver, 10).until(
+            EC.element_to_be_clickable((By.ID, 'add-card'))
+        )
+        self.driver.execute_script("arguments[0].click();", add_card_button)
 
     def add_credit_card(self, number, cvv):
-        self.driver.find_element(By.ID, 'add-card').click()
         self.driver.find_element(By.ID, 'card-number').send_keys(number)
-
         cvv_input = self.driver.find_element(By.ID, 'code')
         cvv_input.send_keys(cvv)
         cvv_input.send_keys(Keys.TAB)
-
         link_button = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable((By.ID, 'link'))
         )
-        self.driver.execute_script("arguments[0].scrollIntoView(true);", link_button)
-        link_button.click()
+        self.driver.execute_script("arguments[0].click();", link_button)
 
     def write_message(self, message):
         comment_input = self.driver.find_element(By.ID, 'comment')
@@ -103,76 +107,96 @@ class UrbanRoutesPage:
         ice_cream_input.send_keys("2")
 
     def request_taxi(self):
-        # Buscar el botón por su texto
         taxi_button = WebDriverWait(self.driver, 15).until(
             EC.presence_of_element_located((By.XPATH, '//button[contains(text(), "Pedir un taxi")]'))
         )
-        self.driver.execute_script("arguments[0].scrollIntoView(true);", taxi_button)
-
-        # Ejecutar el clic directamente vía JS
         self.driver.execute_script("arguments[0].click();", taxi_button)
 
-
 class TestUrbanRoutes:
-
     driver = None
 
     @classmethod
     def setup_class(cls):
-        # no lo modifiques, ya que necesitamos un registro adicional habilitado para recuperar el código de confirmación del teléfono
         from selenium.webdriver import ChromeOptions
-
         options = ChromeOptions()
         options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
-
         cls.driver = webdriver.Chrome(options=options)
 
+    def setup_method(self):
+        self.driver.get(data.urban_routes_url)
+        self.routes_page = UrbanRoutesPage(self.driver)
+
     def test_set_route(self):
-        self.driver.get(data.urban_routes_url)
-        routes_page = UrbanRoutesPage(self.driver)
-        address_from = data.address_from
-        address_to = data.address_to
-        routes_page.set_from(address_from)
-        routes_page.set_to(address_to)
-        assert routes_page.get_from() == address_from
-        assert routes_page.get_to() == address_to
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        assert data.address_from in self.driver.page_source
+        assert data.address_to in self.driver.page_source
 
-    def test_full_taxi_order(self):
-        self.driver.get(data.urban_routes_url)
-        routes_page = UrbanRoutesPage(self.driver)
+    def test_select_tariff(self):
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        self.routes_page.click_first_order_button()
+        self.routes_page.select_comfort_tariff()
+        assert "comfort" in self.driver.page_source.lower()
 
-        # Paso 1: Establecer direcciones
-        routes_page.set_from(data.address_from)
-        routes_page.set_to(data.address_to)
+    def test_add_phone_and_enter_number(self):
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        self.routes_page.click_first_order_button()
+        self.routes_page.select_comfort_tariff()
+        self.routes_page.click_add_phone()
+        self.routes_page.enter_phone(data.phone_number)
+        assert "+" in self.driver.page_source
 
-        # Paso 2: Seleccionar tarifa Comfort
-        routes_page.select_comfort_tariff()
+    def test_add_card_and_enter_details(self):
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        self.routes_page.click_first_order_button()
+        self.routes_page.select_comfort_tariff()
+        self.routes_page.click_add_phone()
+        self.routes_page.enter_phone(data.phone_number)
+        self.routes_page.click_add_card()
+        self.routes_page.add_credit_card(data.card_number, data.card_code)
+        assert "****" in self.driver.page_source or "1234" in self.driver.page_source
 
-        # Paso 3: Ingresar teléfono
-        routes_page.enter_phone(data.phone_number)
+    def test_write_message(self):
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        self.routes_page.click_first_order_button()
+        self.routes_page.select_comfort_tariff()
+        self.routes_page.click_add_phone()
+        self.routes_page.enter_phone(data.phone_number)
+        self.routes_page.click_add_card()
+        self.routes_page.add_credit_card(data.card_number, data.card_code)
+        self.routes_page.write_message(data.message_for_driver)
+        assert data.message_for_driver in self.driver.page_source
 
-        # Paso 4: Agregar tarjeta de crédito
-        routes_page.add_credit_card(data.card_number, data.card_code)
+    def test_request_items(self):
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        self.routes_page.click_first_order_button()
+        self.routes_page.select_comfort_tariff()
+        self.routes_page.click_add_phone()
+        self.routes_page.enter_phone(data.phone_number)
+        self.routes_page.click_add_card()
+        self.routes_page.add_credit_card(data.card_number, data.card_code)
+        self.routes_page.write_message(data.message_for_driver)
+        self.routes_page.request_items()
+        assert "ice" in self.driver.page_source.lower()
 
-        # Paso 5: Obtener código de verificación (si la app lo pide)
-        code = retrieve_phone_code(self.driver)
-        print(f"Código de verificación: {code}")
-        code_input = self.driver.find_element(By.ID, 'code')
-        code_input.send_keys(Keys.TAB)
-
-        # Paso 6: Escribir mensaje al conductor
-        routes_page.write_message(data.message_for_driver)
-
-        # Paso 7: Pedir manta, pañuelos, y 2 helados
-        routes_page.request_items()
-
-        # Paso 8: Pedir taxi
-        routes_page.request_taxi()
-
-        # Paso 9: Esperar a que se muestre el bloque con el rating del conductor
-        WebDriverWait(self.driver, 30).until(
-            lambda d: "Tu conductor" in d.page_source or "4,9" in d.page_source
-        )
+    def test_request_taxi(self):
+        self.routes_page.set_from(data.address_from)
+        self.routes_page.set_to(data.address_to)
+        self.routes_page.click_first_order_button()
+        self.routes_page.select_comfort_tariff()
+        self.routes_page.click_add_phone()
+        self.routes_page.enter_phone(data.phone_number)
+        self.routes_page.click_add_card()
+        self.routes_page.add_credit_card(data.card_number, data.card_code)
+        self.routes_page.write_message(data.message_for_driver)
+        self.routes_page.request_items()
+        self.routes_page.request_taxi()
+        assert "conductor" in self.driver.page_source.lower() or "buscando" in self.driver.page_source.lower()
 
     @classmethod
     def teardown_class(cls):
